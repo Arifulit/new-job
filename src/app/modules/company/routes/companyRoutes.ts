@@ -10,7 +10,10 @@ import {
 const router = Router();
 
 // CRUD
-router.post("/", createCompany);
+// router.post("/", createCompany);
+// added: accept /create path too so client calling /api/v1/company/create works
+router.post("/create", createCompany);
+
 router.get("/", getCompanies);
 router.get("/:id", getCompany);
 router.put("/:id", updateCompany);
