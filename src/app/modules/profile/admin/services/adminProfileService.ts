@@ -1,4 +1,5 @@
 import { AdminProfile } from "../models/AdminProfile";
+import bcrypt from 'bcrypt';
 
 export interface CreateAdminProfileDTO {
   name?: string;
@@ -24,10 +25,25 @@ export const getAdminProfile = async (id: string) => {
   return await AdminProfile.findById(id);
 };
 
+// In adminProfileService.ts
 export const updateAdminProfile = async (id: string, data: UpdateAdminProfileDTO) => {
-  return await AdminProfile.findByIdAndUpdate(id, data, { new: true });
+  // If password is being updated, hash it
+  if (data.password) {
+    const salt = await bcrypt.genSalt(10);
+    data.password = await bcrypt.hash(data.password, salt);
+  }
+
+  return await AdminProfile.findByIdAndUpdate(
+    id, 
+    { $set: data },
+    { new: true, runValidators: true }
+  );
 };
 
 export const getAllAdmins = async () => {
   return await AdminProfile.find();
+};
+
+export const getAdminByEmail = async (email: string) => {
+  return await AdminProfile.findOne({ email }).select('+password');
 };

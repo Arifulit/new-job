@@ -4,7 +4,7 @@ import { Router } from "express";
 
 const router = Router();
 
-router.use("/profile/admin", adminProfileRoutes);
+router.use("/profile", adminProfileRoutes);
 router.use("/announcement", announcementRoutes);
 
 export default router;

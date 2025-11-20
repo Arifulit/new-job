@@ -1,21 +1,123 @@
+// src/app/modules/application/routes/applicationRoutes.ts
 import { Router } from "express";
-import {
-  applyJob,
+import { 
+  applyJob, 
+  getCandidateApplications, 
   updateApplication,
-  getCandidateApplications,
-  getJobApplications
+  getJobApplications,
+  getJobApplicationsNew as getMyJobApplications
 } from "../controllers/applicationController";
-
 import { authMiddleware } from "../../../middleware/auth";
 
 const router = Router();
 
 // Candidate routes
-router.post("/", authMiddleware(["Candidate"]), applyJob);
-router.get("/me", authMiddleware(["Candidate"]), getCandidateApplications);
+router.post(
+  "/", 
+  authMiddleware(["candidate"]), 
+  applyJob
+);
 
-// Employer routes
-router.get("/job/:jobId", authMiddleware(["Employer"]), getJobApplications);
-router.put("/:id", authMiddleware(["Employer"]), updateApplication);
+router.get(
+  "/me", 
+  authMiddleware(["candidate"]), 
+  getCandidateApplications
+);
+
+// Recruiter routes
+router.get(
+  "/jobs/:jobId/applications", 
+  authMiddleware(["recruiter", "admin"]), 
+  (req: Request, res: Response, next: NextFunction) => {
+    const authReq = req as any as AuthenticatedRequest;
+    return getJobApplications(authReq, res);
+  }
+);
+
+router.get(
+  "/recruiter/applications", 
+  authMiddleware(["recruiter"]), 
+  getMyJobApplications as any
+);
+
+// Admin routes
+router.put(
+  "/:id", 
+  authMiddleware(["admin"]), 
+  updateApplication as any
+);
 
 export default router;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+// import { Router } from "express";
+// import { 
+//   applyJob, 
+//   getCandidateApplications, 
+//   updateApplication,
+//   getJobApplications,
+//   getMyJobApplications
+// } from "../controllers/applicationController";
+// import { authMiddleware } from "../../../middleware/auth";
+
+// const router = Router();
+
+// // Candidate routes
+// router.post("/", 
+//   authMiddleware(["candidate"]), 
+//   applyJob as any
+// );
+
+// router.get("/me", 
+//   authMiddleware(["candidate"]), 
+//   getCandidateApplications as any
+// );
+
+// // Recruiter routes
+// router.get("/jobs/:jobId/applications", 
+//   authMiddleware(["recruiter", "admin"]), 
+//   getJobApplications
+// );
+
+// router.get("/recruiter/applications", 
+//   authMiddleware(["recruiter"]), 
+//   getMyJobApplications as any
+// );
+
+// // Admin routes
+// router.put("/:id", 
+//   authMiddleware(["admin"]), 
+//   updateApplication as any
+// );
+
+// export default router;

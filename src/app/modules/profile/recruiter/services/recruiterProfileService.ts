@@ -12,6 +12,19 @@ export const getRecruiterProfile = async (userId: string) => {
   return await RecruiterProfile.findOne({ user: userId }).populate("agency");
 };
 
-export const updateRecruiterProfile = async (userId: string, data: UpdateRecruiterProfileDTO) => {
-  return await RecruiterProfile.findOneAndUpdate({ user: userId }, data, { new: true });
+export const updateRecruiterProfile = async (userId: string, data: any) => {
+  const profile = await RecruiterProfile.findOneAndUpdate(
+    { user: userId },
+    { $set: data },
+    { new: true, runValidators: true }
+  )
+  .populate('user', 'email role')
+  .populate('agency', 'name')
+  .lean();
+  
+  if (!profile) {
+    throw new Error('Recruiter profile not found');
+  }
+  
+  return profile;
 };

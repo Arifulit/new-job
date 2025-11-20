@@ -1,168 +1,160 @@
 
-// import { Request, Response, NextFunction, RequestHandler } from "express";
-// import { verifyToken } from "../config/jwt";
+// // import { Request, Response, NextFunction, RequestHandler } from "express";
 
-// // Auth middleware: check token and optionally allowed roles
-// export const authMiddleware = (allowedRoles?: string[]): RequestHandler => {
-//   return (req: Request, res: Response, next: NextFunction) => {
-//     try {
-//       const authHeader = (req.headers.authorization || "").toString();
-//       const token = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : undefined;
-
-//       if (!token) return res.status(401).json({ success: false, message: "Unauthorized" });
-
-//       const payload = verifyToken(token) as any;
-//       if (!payload) return res.status(401).json({ success: false, message: "Unauthorized" });
-
-//       (req as any).user = { id: payload.id ?? payload.sub, role: payload.role, ...payload };
-
-//       // Check roles if provided
-//       if (allowedRoles && allowedRoles.length > 0) {
-//         const userRole = ((req as any).user.role || "").toString().toLowerCase();
-//         const allowed = allowedRoles.map(r => r.toString().toLowerCase());
-//         if (!allowed.includes(userRole)) return res.status(403).json({ success: false, message: "Forbidden" });
-//       }
-
-//       next();
-//     } catch (err) {
-//       return res.status(401).json({ success: false, message: "Unauthorized" });
-//     }
-//   };
-// };
-
-// // optionalAuth: attach user if token present, otherwise continue
-// export const optionalAuth: RequestHandler = (req: Request, res: Response, next: NextFunction) => {
-//   try {
-//     const authHeader = (req.headers.authorization || "").toString();
-//     const token = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : undefined;
-//     if (!token) return next();
-
-//     const payload = verifyToken(token) as any;
-//     if (!payload) return next();
-
-//     (req as any).user = { id: payload.id ?? payload.sub, role: payload.role, ...payload };
-//     next();
-//   } catch {
-//     next();
-//   }
-// };
-
-// // Default export (for convenience)
-// export default authMiddleware;
-// ...existing code...
 import { Request, Response, NextFunction, RequestHandler } from "express";
 import jwt from "jsonwebtoken";
+import { AuthenticatedRequest } from "../../types/express";
 
-function extractToken(req: Request) {
+type AuthenticatedHandler = (
+  req: AuthenticatedRequest,
+  res: Response,
+  next: NextFunction
+) => Promise<void> | void;
+
+function extractToken(req: Request): string | undefined {
+  // 1. Check Authorization header first
   const authHeader = (req.headers.authorization || "").toString();
-  if (authHeader.startsWith("Bearer ")) return authHeader.slice(7);
-  // accept token from cookies if present (ensure cookie-parser is used in server)
-  if ((req as any).cookies?.accessToken) return (req as any).cookies.accessToken;
-  if ((req as any).cookies?.refreshToken) return (req as any).cookies.refreshToken;
+  if (authHeader.startsWith("Bearer ")) {
+    return authHeader.slice(7);
+  }
+  
+  // 2. Check cookies
+  if ((req as any).cookies?.accessToken) {
+    return (req as any).cookies.accessToken;
+  }
+  if ((req as any).cookies?.refreshToken) {
+    return (req as any).cookies.refreshToken;
+  }
+  
   return undefined;
 }
 
 export const authMiddleware = (allowedRoles?: string[]): RequestHandler => {
-  return (req: Request, res: Response, next: NextFunction) => {
+  return async (req: Request | AuthenticatedRequest, res: Response, next: NextFunction) => {
     try {
-      console.log("🔐 authMiddleware: Checking authentication");
+      console.log("🔐 authMiddleware: Starting authentication check");
       console.log("🔐 Request method:", req.method);
       console.log("🔐 Request path:", req.path);
-      console.log("🔐 Allowed roles:", allowedRoles);
+      console.log("🔐 Allowed roles:", allowedRoles || "Any authenticated user");
       
+      // Extract token from request
       const token = extractToken(req);
-      console.log("🔐 Token extracted:", token ? "Yes" : "No");
-      
       if (!token) {
-        console.log("⚠️ authMiddleware: No token provided");
+        console.log("⚠️ authMiddleware: No authentication token found");
         return res.status(401).json({ 
           success: false, 
-          message: "Unauthorized - No token provided. Please include Authorization header with Bearer token" 
+          message: "Authentication required" 
         });
       }
 
-      const secret = process.env.JWT_SECRET ?? process.env.EXPRESS_SESSION_SECRET;
+      // Get JWT secret
+      const secret = process.env.JWT_SECRET;
       if (!secret) {
-        console.log("❌ authMiddleware: JWT secret missing");
-        return res.status(500).json({ success: false, message: "Server misconfigured: JWT secret missing" });
+        console.error("❌ authMiddleware: JWT_SECRET is not configured");
+        return res.status(500).json({ 
+          success: false, 
+          message: "Server configuration error" 
+        });
       }
 
       try {
+        // Verify and decode the token
         const decoded = jwt.verify(token, secret) as any;
         console.log("✅ authMiddleware: Token verified successfully");
-        console.log("🔐 Decoded token:", { id: decoded.id, role: decoded.role, email: decoded.email });
         
+        // Ensure required fields exist in the token
+        if (!decoded.id) {
+          throw new Error("Token missing required fields");
+        }
+
+        // Set user in request object with proper role handling
+        const userRole = (decoded.role || 'user').toString().toLowerCase().trim();
         req.user = {
-          id: decoded.id ?? decoded.sub,
-          email: decoded.email,
-          role: decoded.role,
+          id: decoded.id,
+          email: decoded.email || '',
+          role: userRole,
           ...decoded
         };
 
+        // Ensure user exists before accessing properties
+        if (!req.user) {
+          return next(new Error('User not found in request after authentication'));
+        }
+        
+        const user = req.user;
+        console.log("🔐 Authenticated user:", {
+          id: user.id,
+          role: user.role,
+          email: user.email
+        });
+
+        // Check role-based access if required
         if (allowedRoles && allowedRoles.length > 0) {
-          const userRole = (((req.user as any)?.role ?? "")).toString().toLowerCase();
-          const allowed = allowedRoles.map(r => r.toString().toLowerCase());
-          console.log("🔐 User role:", userRole, "| Allowed roles:", allowed);
+          const allowed = allowedRoles.map(r => r.toString().toLowerCase().trim());
           
-          if (!allowed.includes(userRole)) {
-            console.log("⚠️ authMiddleware: Role mismatch - User role not in allowed roles");
-            return res.status(403).json({ 
-              success: false, 
-              message: `Forbidden - Required role: ${allowedRoles.join(" or ")}, but user has role: ${userRole || "none"}` 
-            });
+          console.log("🔐 Checking access - User role:", `'${userRole}'`, "| Allowed roles:", allowed);
+          
+          // If user has 'admin' role, always allow access
+          if (userRole === 'admin') {
+            console.log("✅ Admin access granted");
+            next();
+            return;
+          } 
+          // Check if user has any of the allowed roles
+          else if (userRole && allowed.includes(userRole)) {
+            console.log(`✅ Access granted for role: ${userRole}`);
+            next();
+            return;
           }
+          
+          // If we get here, access is denied
+          console.log(`⚠️ authMiddleware: Access denied - Role '${userRole}' not in`, allowed);
+          return res.status(403).json({ 
+            success: false, 
+            message: `Forbidden - You don't have permission to access this resource` 
+          });
         }
 
-        console.log("✅ authMiddleware: Authentication successful, proceeding...");
+        console.log("✅ authMiddleware: Authentication successful, proceeding to route handler");
         next();
       } catch (verifyError: any) {
-        console.log("❌ authMiddleware: Token verification failed:", verifyError.message);
+        console.error("❌ authMiddleware: Token verification failed:", verifyError.message);
         return res.status(401).json({ 
           success: false, 
-          message: `Unauthorized - Invalid or expired token: ${verifyError.message}` 
+          message: "Invalid or expired authentication token" 
         });
       }
-    } catch (err: any) {
-      console.log("❌ authMiddleware: Unexpected error:", err.message);
-      return res.status(401).json({ 
+    } catch (error: any) {
+      console.error("❌ authMiddleware: Unexpected error:", error.message);
+      return res.status(500).json({ 
         success: false, 
-        message: "Unauthorized - Authentication failed" 
+        message: "An error occurred during authentication" 
       });
     }
   };
 };
 
-export const optionalAuth: RequestHandler = (req: Request, res: Response, next: NextFunction) => {
+export const optionalAuth: RequestHandler = (req, res, next) => {
+  const token = extractToken(req);
+  if (!token) return next();
+
+  const secret = process.env.JWT_SECRET;
+  if (!secret) return next();
+
   try {
-    const token = extractToken(req);
-    if (token) {
-      const secret = process.env.JWT_SECRET ?? process.env.EXPRESS_SESSION_SECRET;
-      if (secret) {
-        try {
-          const decoded = jwt.verify(token, secret) as any;
-          req.user = {
-            id: decoded.id ?? decoded.sub,
-            email: decoded.email,
-            role: decoded.role,
-            ...decoded
-          };
-          console.log("✅ optionalAuth: User authenticated:", req.user.id);
-        } catch (verifyError: any) {
-          console.log("⚠️ optionalAuth: Token verification failed:", verifyError.message);
-          // Continue without setting req.user
-        }
-      } else {
-        console.log("⚠️ optionalAuth: JWT secret not configured");
-      }
-    } else {
-      console.log("⚠️ optionalAuth: No token provided");
-    }
-  } catch (err: any) {
-    console.log("⚠️ optionalAuth: Error extracting token:", err.message);
-    // Continue without setting req.user
+    const decoded = jwt.verify(token, secret) as any;
+    req.user = {
+      id: decoded.id,
+      email: decoded.email || '',
+      role: (decoded.role || 'user').toLowerCase().trim(),
+      ...decoded
+    };
+    console.log("🔐 Optional auth - Authenticated user:", req.user?.id);
+  } catch (error) {
+    console.log("ℹ️ Optional auth - Invalid token, continuing as guest");
   }
+  
   next();
 };
 
 export default authMiddleware;
-// ...existing code...

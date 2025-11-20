@@ -4,7 +4,7 @@ import * as authService from "../services/authService";
 import { User } from "../models/User";
 
 import { CandidateProfile } from "../../profile/candidate/models/CandidateProfile";
-import { EmployerProfile } from "../../profile/employer/models/EmployerProfile";
+// Employer related code removed
 import { RecruiterProfile } from "../../profile/recruiter/models/RecruiterProfile";
 import { AdminProfile } from "../../profile/admin/models/AdminProfile";
 
@@ -84,18 +84,7 @@ export const register = async (req: Request, res: Response) => {
         });
         break;
 
-      case "employer":
-        if (!phone || !company || !designation)
-          throw new Error("Phone, company and designation are required for employer");
-
-        await EmployerProfile.create({
-          user: userId,
-          name,
-          phone,
-          company, // <-- FIXED
-          designation
-        });
-        break;
+      // Employer registration removed
 
       case "recruiter":
         if (!phone || !designation || !agency)
@@ -148,10 +137,37 @@ export const register = async (req: Request, res: Response) => {
 export const login = async (req: Request, res: Response) => {
   const { email, password } = req.body;
   try {
+    if (!email || !password) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Email and password are required' 
+      });
+    }
+
     const { user } = await authService.loginUser(email, password);
     const userId = (user as any)._id.toString();
-    const accessToken = authService.signToken({ id: userId, role: (user as any).role }, ACCESS_TTL);
-    const refreshToken = authService.signToken({ id: userId }, REFRESH_TTL);
+    const userRole = (user as any).role || 'user';
+    
+    // Include the role in both access and refresh tokens
+    const accessToken = authService.signToken({ 
+      id: userId, 
+      role: userRole,
+      email: user.email
+    }, ACCESS_TTL);
+    
+    const refreshToken = authService.signToken({ 
+      id: userId,
+      role: userRole
+    }, REFRESH_TTL);
+
+    // Remove sensitive data from user object
+    const userResponse = {
+      id: user._id,
+      name: user.name,
+      email: user.email,
+      role: user.role,
+      // Add other non-sensitive fields as needed
+    };
 
     res.cookie(REFRESH_COOKIE_NAME, refreshToken, {
       httpOnly: true,
@@ -160,9 +176,20 @@ export const login = async (req: Request, res: Response) => {
       maxAge: REFRESH_COOKIE_MAXAGE
     });
 
-    res.status(200).json({ success: true, data: { user, accessToken, refreshToken } });
+    res.status(200).json({ 
+      success: true, 
+      data: { 
+        user: userResponse, 
+        accessToken, 
+        refreshToken 
+      } 
+    });
   } catch (err: any) {
-    res.status(400).json({ success: false, message: err.message });
+    console.error("Login error:", err);
+    res.status(400).json({ 
+      success: false, 
+      message: err.message || "Login failed. Please check your credentials." 
+    });
   }
 };
 

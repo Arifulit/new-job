@@ -40,35 +40,65 @@ export const createCandidateProfileController = async (req: Request, res: Respon
 export const getCurrentCandidateProfileController = async (req: Request, res: Response) => {
   try {
     console.log("🟦 Controller: Getting current candidate profile");
-    console.log("🟦 User from request:", req.user);
-    console.log("🟦 Authorization header:", req.headers.authorization);
     
-    // If user is authenticated, get their profile
-    if (req.user?.id) {
-      console.log("🟦 User authenticated, userId:", req.user.id);
-      const profile = await candidateProfileService.getCandidateProfile(req.user.id);
-      if (!profile) {
-        console.log("⚠️ Controller: Profile not found for userId:", req.user.id);
-        return res.status(404).json({ 
-          success: false, 
-          message: "Profile not found" 
-        });
-      }
-      console.log("✅ Controller: Profile retrieved successfully");
-      return res.status(200).json({ success: true, data: profile });
+    // If user is not authenticated
+    if (!req.user?.id) {
+      console.log("⚠️ Controller: No user authenticated");
+      return res.status(401).json({ 
+        success: false, 
+        message: "Authentication required. Please log in to view your profile.",
+        error: {
+          code: "AUTH_REQUIRED",
+          description: "No valid authentication token provided"
+        }
+      });
     }
+
+    console.log("🟦 User authenticated, userId:", req.user.id);
+    const profile = await candidateProfileService.getCandidateProfile(req.user.id);
     
-    // If not authenticated, return error asking for userId
-    console.log("⚠️ Controller: No user authenticated");
-    return res.status(401).json({ 
-      success: false, 
-      message: "Please authenticate with a valid token or provide userId in the URL path" 
+    if (!profile) {
+      console.log("⚠️ Controller: Profile not found for userId:", req.user.id);
+      return res.status(404).json({ 
+        success: false, 
+        message: "Profile not found",
+        error: {
+          code: "PROFILE_NOT_FOUND",
+          description: "No candidate profile exists for this user. Please create a profile first.",
+          solution: "Make a POST request to create a new profile"
+        }
+      });
+    }
+
+    console.log("✅ Controller: Profile retrieved successfully");
+    return res.status(200).json({ 
+      success: true, 
+      message: "Candidate profile retrieved successfully",
+      data: profile 
     });
+    
   } catch (error: any) {
     console.error("❌ Controller Error (getCurrentCandidateProfile):", error.message);
+    
+    // Handle specific error types
+    if (error.name === 'CastError') {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid user ID format",
+        error: {
+          code: "INVALID_ID_FORMAT",
+          description: "The provided user ID is not in the correct format"
+        }
+      });
+    }
+    
     return res.status(500).json({ 
       success: false, 
-      message: error.message || "Error getting profile" 
+      message: "An unexpected error occurred while retrieving the profile",
+      error: {
+        code: "SERVER_ERROR",
+        description: error.message || "Internal server error"
+      }
     });
   }
 };
