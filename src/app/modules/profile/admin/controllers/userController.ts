@@ -163,6 +163,57 @@ export const suspendUserController = async (req: Request, res: Response) => {
   }
 };
 
+export const updateUserRoleController = async (req: Request, res: Response) => {
+  try {
+    const { userId } = req.params;
+    const { role } = req.body;
+
+    if (!role) {
+      return res.status(400).json({
+        success: false,
+        message: "Role is required",
+        error: {
+          code: "MISSING_ROLE",
+          description: "The 'role' field is required in the request body"
+        }
+      });
+    }
+
+    const result = await userService.updateUserRole(userId, role);
+    
+    res.status(200).json({
+      success: true,
+      message: result.message,
+      data: result.data
+    });
+  } catch (error: any) {
+    console.error("Error in updateUserRoleController:", error);
+    
+    let statusCode = 500;
+    let errorCode = "ROLE_UPDATE_ERROR";
+    
+    if (error.message.includes("User not found")) {
+      statusCode = 404;
+      errorCode = "USER_NOT_FOUND";
+    } else if (error.message.includes("Cannot change role of a suspended user")) {
+      statusCode = 400;
+      errorCode = "USER_SUSPENDED";
+    } else if (error.message.includes("Invalid role")) {
+      statusCode = 400;
+      errorCode = "INVALID_ROLE";
+    }
+    
+    res.status(statusCode).json({
+      success: false,
+      message: error.message || "Error updating user role",
+      error: {
+        code: errorCode,
+        description: error.message || "An error occurred while updating the user role"
+      }
+    });
+  }
+};
+
 export const getAllRecruitersController = async (req: Request, res: Response) => {
   try {
     const recruiters = await userService.getAllRecruiters();

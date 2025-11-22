@@ -1,30 +1,36 @@
-// // src/app/modules/application/routes/applicationRoutes.ts
-// import { Router, Request, Response, NextFunction } from "express";
+
+// import { Router } from "express";
 // import { 
 //   applyJob, 
 //   getCandidateApplications, 
 //   updateApplication,
 //   getJobApplications,
-//   getJobApplicationsNew
+//   getJobApplicationsNew,
+//   getJobAllApplications
 // } from "../controllers/applicationController";
 // import { authMiddleware } from "../../../middleware/auth";
 
 // const router = Router();
 
 // // Candidate routes
-// router.post(
-//   "/", 
-//   authMiddleware(["candidate"]), 
-//   applyJob
-// );
+// router.post("/", authMiddleware(["candidate"]), applyJob);
+// router.get("/me", authMiddleware(["candidate"]), getCandidateApplications);
 
+// // Recruiter routes
 // router.get(
-//   "/me", 
-//   authMiddleware(["candidate"]), 
-//   getCandidateApplications
+//   "/recruiter/all-applications",
+//   authMiddleware(["recruiter"]),
+//   getJobAllApplications
 // );
 
-// // Recruiter routes - View applications for a specific job
+// // Update application (PUT /:id) - MOVE THIS BEFORE parameterized routes
+// router.put(
+//   "/:id",
+//   authMiddleware(["admin", "recruiter"]),
+//   updateApplication
+// );
+
+// // View applications for a specific job
 // router.get(
 //   "/jobs/:jobId/applications", 
 //   authMiddleware(["recruiter", "admin"]), 
@@ -37,93 +43,10 @@
 //   authMiddleware(["recruiter"]), 
 //   getJobApplicationsNew
 // );
-// router.get(
-//   "/recruiter/all-applications", 
-//   authMiddleware(["recruiter"]), 
-//   getJobAllApplications
-// );
-
-
-// // Admin routes
-// router.put(
-//   "/:id", 
-//   authMiddleware(["admin"]), 
-//   updateApplication
-// );
 
 // export default router;
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-// // import { Router } from "express";
-// // import { 
-// //   applyJob, 
-// //   getCandidateApplications, 
-// //   updateApplication,
-// //   getJobApplications,
-// //   getMyJobApplications
-// // } from "../controllers/applicationController";
-// // import { authMiddleware } from "../../../middleware/auth";
-
-// // const router = Router();
-
-// // // Candidate routes
-// // router.post("/", 
-// //   authMiddleware(["candidate"]), 
-// //   applyJob as any
-// // );
-
-// // router.get("/me", 
-// //   authMiddleware(["candidate"]), 
-// //   getCandidateApplications as any
-// // );
-
-// // // Recruiter routes
-// // router.get("/jobs/:jobId/applications", 
-// //   authMiddleware(["recruiter", "admin"]), 
-// //   getJobApplications
-// // );
-
-// // router.get("/recruiter/applications", 
-// //   authMiddleware(["recruiter"]), 
-// //   getMyJobApplications as any
-// // );
-
-// // // Admin routes
-// // router.put("/:id", 
-// //   authMiddleware(["admin"]), 
-// //   updateApplication as any
-// // );
-
-// // export default router;
-
-//// src/app/modules/application/routes/applicationRoutes.ts
+// src/app/modules/application/routes/applicationRoutes.ts
 import { Router } from "express";
 import { 
   applyJob, 
@@ -140,6 +63,7 @@ const router = Router();
 // Candidate routes
 router.post("/", authMiddleware(["candidate"]), applyJob);
 router.get("/me", authMiddleware(["candidate"]), getCandidateApplications);
+import { withdrawApplication } from "../controllers/applicationController";
 
 // Recruiter routes
 router.get(
@@ -148,10 +72,10 @@ router.get(
   getJobAllApplications
 );
 
-// Update application (PUT /:id) - MOVE THIS BEFORE parameterized routes
+// Update application status (PUT /:id)
 router.put(
   "/:id",
-  authMiddleware(["admin", "recruiter"]),
+  authMiddleware(["recruiter", "admin"]),
   updateApplication
 );
 
@@ -167,6 +91,11 @@ router.get(
   "/recruiter/jobs/:jobId/applications", 
   authMiddleware(["recruiter"]), 
   getJobApplicationsNew
+);
+router.post(
+  "/:id/withdraw",
+  authMiddleware(["candidate"]),
+  withdrawApplication
 );
 
 export default router;

@@ -67,17 +67,30 @@ export const applyJob = async (req: AuthenticatedRequest, res: Response) => {
   }
 };
 
+// In applicationController.ts
+// In applicationController.ts
 export const updateApplication = async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { id } = req.params;
-    const updateData = req.body;
+    const { status } = req.body;
     const userRole = req.user.role;
+
+    // Validate status
+    const validStatuses = ['Applied', 'Shortlisted', 'Interview', 'Hired', 'Rejected'];
+    if (status && !validStatuses.includes(status)) {
+      return res.status(400).json({
+        success: false,
+        message: `Invalid status. Must be one of: ${validStatuses.join(', ')}`
+      });
+    }
 
     // Find the application with job details
     const application = await Application.findById(id)
       .populate({
         path: 'job',
-        select: 'createdBy'
+        select: 'createdBy',
+        // Make sure to include the reference to the job
+        options: { lean: true }
       });
 
     if (!application) {
@@ -87,10 +100,18 @@ export const updateApplication = async (req: AuthenticatedRequest, res: Response
       });
     }
 
+    // Check if job exists and has createdBy
+    if (!application.job) {
+      return res.status(404).json({
+        success: false,
+        message: 'Associated job not found'
+      });
+    }
+
     // For recruiters, verify they created the job
     if (userRole === 'recruiter') {
       const job = application.job as any;
-      if (job.createdBy.toString() !== req.user.id) {
+      if (!job.createdBy || job.createdBy.toString() !== req.user.id) {
         return res.status(403).json({
           success: false,
           message: 'Not authorized to update this application'
@@ -98,45 +119,26 @@ export const updateApplication = async (req: AuthenticatedRequest, res: Response
       }
     }
 
-    // Only allow specific fields to be updated
-    const allowedUpdates = ['status', 'internalNotes', 'rating', 'feedback'];
-    const updates = Object.keys(req.body)
-      .filter(key => allowedUpdates.includes(key))
-      .reduce((obj, key) => {
-        obj[key] = req.body[key];
-        return obj;
-      }, {} as any);
+    // Update the application status
+    application.status = status || application.status;
+    await application.save();
 
-    // Update the application
-    const updatedApplication = await Application.findByIdAndUpdate(
-      id,
-      { $set: updates },
-      { 
-        new: true,
-        runValidators: true 
-      }
-    )
-    .populate('candidate', 'name email')
-    .populate({
-      path: 'job',
-      select: 'title company',
-      populate: {
-        path: 'createdBy',
-        select: 'name email'
-      }
-    });
-
-    if (!updatedApplication) {
-      return res.status(404).json({
-        success: false,
-        message: 'Application not found after update'
+    // Populate the response with necessary data
+    const updatedApp = await Application.findById(application._id)
+      .populate('candidate', 'name email')
+      .populate({
+        path: 'job',
+        select: 'title company',
+        populate: {
+          path: 'createdBy',
+          select: 'name email'
+        }
       });
-    }
 
     return res.status(200).json({
       success: true,
-      data: updatedApplication,
-      message: 'Application updated successfully'
+      data: updatedApp,
+      message: 'Application status updated successfully'
     });
 
   } catch (error: any) {
@@ -148,6 +150,7 @@ export const updateApplication = async (req: AuthenticatedRequest, res: Response
     });
   }
 };
+
 export const getCandidateApplications = async (req: AuthenticatedRequest, res: Response) => {
   try {
     const applications = await applicationService.getApplicationsByCandidate(req.user.id);
@@ -366,11 +369,48 @@ export const getJobAllApplications = async (req: AuthenticatedRequest, res: Resp
 };
 
 
-// import { createNotification } from "../../notification/services/notificationService";
+// In applicationController.ts
+export const withdrawApplication = async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    const userId = req.user.id;
 
-// // যখন এমপ্লয়ারের দ্বারা status update হবে
-// await createNotification({
-//   user: application.candidate, 
-//   type: "Application",
-//   message: `Your application status for ${application.job} has been updated to ${application.status}`,
-// }, true, candidateEmail); // true মানে email পাঠাবে
+    // Find the application
+    const application = await Application.findById(id)
+      .populate('candidate', 'id')
+      .populate('job', 'createdBy');
+
+    if (!application) {
+      return res.status(404).json({
+        success: false,
+        message: 'Application not found'
+      });
+    }
+
+    // Verify the requesting user is the applicant
+    if (application.candidate._id.toString() !== userId) {
+      return res.status(403).json({
+        success: false,
+        message: 'Not authorized to withdraw this application'
+      });
+    }
+
+    // Update status to Withdrawn
+    application.status = 'Withdrawn';
+    await application.save();
+
+    return res.status(200).json({
+      success: true,
+      message: 'Application withdrawn successfully',
+      data: application
+    });
+
+  } catch (error: any) {
+    console.error('Error withdrawing application:', error);
+    return res.status(500).json({
+      success: false,
+      message: error.message || 'Error withdrawing application',
+      error: process.env.NODE_ENV === 'development' ? error : undefined
+    });
+  }
+};

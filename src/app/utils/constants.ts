@@ -21,10 +21,9 @@ export const DEFAULTS = {
 } as const;
 
 export const ROLES = {
-  SUPER_ADMIN: "super_admin",
   ADMIN: "admin",
-  USER: "user",
   RECRUITER: "recruiter",
+  CANDIDATE: "candidate"
 } as const;
 
 export const ID_PREFIX = {

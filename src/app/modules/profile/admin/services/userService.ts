@@ -95,13 +95,49 @@ export const getAllCandidates = async () => {
 
 export const getAllRecruiters = async () => {
   try {
-    const recruiters = await User.find({ role: 'Recruiter' })
+    const recruiters = await User.find({ role: 'recruiter' })
       .select('-password -__v -refreshToken')
       .sort({ createdAt: -1 })
       .lean();
     return recruiters;
   } catch (error) {
     console.error('Error fetching recruiters:', error);
+    throw error;
+  }
+};
+
+export const updateUserRole = async (userId: string, newRole: string) => {
+  try {
+    // Validate the new role
+    const validRoles = ['admin', 'recruiter', 'candidate'];
+    if (!validRoles.includes(newRole.toLowerCase())) {
+      throw new Error(`Invalid role. Must be one of: ${validRoles.join(', ')}`);
+    }
+
+    const user = await User.findById(userId);
+    if (!user) {
+      throw new Error('User not found');
+    }
+
+    // Don't allow changing role if user is suspended
+    if (user.isSuspended) {
+      throw new Error('Cannot change role of a suspended user');
+    }
+
+    // Update the role
+    user.role = newRole.toLowerCase() as any;
+    await user.save();
+
+    // Return user data without sensitive information
+    const { password, refreshToken, ...userWithoutSensitiveData } = user.toObject();
+    
+    return {
+      success: true,
+      message: `User role updated to ${newRole} successfully`,
+      data: userWithoutSensitiveData
+    };
+  } catch (error) {
+    console.error('Error updating user role:', error);
     throw error;
   }
 };

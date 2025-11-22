@@ -9,7 +9,8 @@ export interface IJobUpdateData {
   salary?: number;
   experienceLevel?: string;
   skills?: string[];
-  status?: 'open' | 'closed' | 'draft' | 'published';
+  status?: 'pending' | 'approved' | 'rejected' | 'closed';
+  rejectionReason?: string;
 }
 
 export interface IJob extends Document {
@@ -22,8 +23,10 @@ export interface IJob extends Document {
   experienceLevel?: string;
   skills: string[];
   createdBy: Schema.Types.ObjectId;
-  company: Schema.Types.ObjectId; // Add company reference
-  status: 'open' | 'closed' | 'draft' | 'published';
+  company: Schema.Types.ObjectId; 
+  status: 'pending' | 'approved' | 'rejected' | 'closed';
+  isApproved: boolean;
+  rejectionReason?: string;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -57,8 +60,16 @@ const jobSchema = new Schema<IJob>({
   },
   status: {
     type: String,
-    enum: ['open', 'closed', 'draft', 'published'],
-    default: 'draft'
+    enum: ['pending', 'approved', 'rejected', 'closed'],
+    default: 'pending'
+  },
+  isApproved: {
+    type: Boolean,
+    default: false
+  },
+  rejectionReason: {
+    type: String,
+    default: ''
   }
 }, { 
   timestamps: true,

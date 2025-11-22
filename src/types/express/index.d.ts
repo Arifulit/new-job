@@ -18,6 +18,7 @@ export interface AuthenticatedRequest extends Request {
   user: {
     id: string;
     role: 'admin' | 'candidate' | 'recruiter';
+    email?: string;  // Made email optional with '?'
     [key: string]: any;
   };
 }

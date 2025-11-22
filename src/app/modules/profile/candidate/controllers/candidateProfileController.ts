@@ -61,23 +61,22 @@ export const getCurrentCandidateProfileController = async (req: Request, res: Re
     // If no profile exists, return an empty profile with default values
     if (!profile) {
       profile = {
+        _id: new Types.ObjectId(),
         user: new Types.ObjectId(req.user.id.toString()),
-        personalInfo: {
-          name: "",
-          email: req.user.email || "",
-          phone: "",
-          address: ""
-        },
-        education: [],
-        experience: [],
+        name: "",
+        phone: "",
+        address: "",
+        email: req.user.email || "", 
         skills: [],
         resume: undefined,
-        isNew: true // Flag to indicate this is a new profile
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        __v: 0
       };
       
       return res.status(200).json({
         success: true,
-        data: profile,
+        isNew: true,
         message: "No profile found. Please update to create a new profile."
       });
     }
@@ -167,17 +166,12 @@ export const updateCurrentCandidateProfileController = async (req: Request, res:
       console.log("ℹ️  Profile doesn't exist, creating new one");
       const profileData = {
         user: userId,
-        ...req.body,
-        // Ensure required fields have default values if not provided
-        personalInfo: {
-          email: req.user.email || "",
-          phone: "",
-          address: "",
-          ...req.body.personalInfo
-        },
-        education: req.body.education || [],
-        experience: req.body.experience || [],
-        skills: req.body.skills || []
+        name: req.body.name || "",
+        phone: req.body.phone || "",
+        address: req.body.address || "",
+        email: req.user.email || "", 
+        skills: req.body.skills || [],
+        ...req.body // Spread any other valid fields from the request
       };
       
       profile = await candidateProfileService.createCandidateProfile(profileData);

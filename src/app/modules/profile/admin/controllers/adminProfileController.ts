@@ -1,4 +1,4 @@
-import { Response } from "express";
+import { Response, Request } from "express";
 import { AuthenticatedRequest } from "@/types/express";
 import * as adminService from "../services/adminProfileService";
 import bcrypt from "bcryptjs";
@@ -39,7 +39,17 @@ export const ensureAdminExists = async () => {
 };
 
 // Admin Profile Controllers
-export const createAdminController = async (req: Request, res: Response) => {
+interface CreateAdminRequest extends Request {
+  body: {
+    name: string;
+    email: string;
+    password: string;
+    phone?: string;
+    [key: string]: any;  // This allows for other properties that might be added by middleware
+  };
+}
+
+export const createAdminController = async (req: CreateAdminRequest, res: Response) => {
   try {
     const { name, email, password, phone } = req.body;
     
@@ -72,9 +82,8 @@ export const createAdminController = async (req: Request, res: Response) => {
     // Save the admin (this will trigger the pre-save hook)
     await admin.save();
     
-    // Convert to object and remove password before sending response
-    const adminObject = admin.toObject();
-    delete adminObject.password;
+    // Convert to object and exclude password before sending response
+    const { password: _, ...adminObject } = admin.toObject();
     
     res.status(201).json({ 
       success: true, 
@@ -89,55 +98,21 @@ export const createAdminController = async (req: Request, res: Response) => {
   }
 };
 
-// In adminProfileController.ts
-// export const getAdminController = async (req: AuthenticatedRequest, res: Response) => {
-//   try {
-//     // Use either the ID from params (for public access) or from the authenticated user
-//     const adminId = req.params.id || req.user?.id;
-    
-//     if (!adminId) {
-//       return res.status(400).json({
-//         success: false,
-//         message: "Admin ID is required"
-//       });
-//     }
-
-//     // Include password and phone in the query, exclude only __v
-//     const admin = await AdminProfile.findById(adminId).select('-__v').lean();
-    
-//     if (!admin) {
-//       return res.status(404).json({
-//         success: false,
-//         message: "Admin not found"
-//       });
-//     }
-
-//     res.status(200).json({
-//       success: true,
-//       data: admin
-//     });
-//   } catch (error: any) {
-//     console.error('Error in getAdminController:', error);
-//     res.status(500).json({
-//       success: false,
-//       message: error.message || "Error fetching admin profile"
-//     });
-//   }
-// };
-
-export const getAdminController = async (req: AuthenticatedRequest, res: Response) => {
+// Get admin profile (works for both authenticated and unauthenticated requests)
+export const getAdminController = async (req: Request, res: Response) => {
   try {
-    const adminId = req.params.id || req.user?.id;
+    // Use either the ID from params (for public access) or from the authenticated user
+    const userId = req.params.id || (req as any).user?.id;
     
-    if (!adminId) {
+    if (!userId) {
       return res.status(400).json({
         success: false,
-        message: "Admin ID is required"
+        message: "User ID is required"
       });
     }
 
     // Include all fields except the ones we explicitly exclude
-    const admin = await AdminProfile.findById(adminId)
+    const admin = await AdminProfile.findById(userId)
       .select('+password')  // Include password if needed
       .lean();
 
@@ -148,6 +123,20 @@ export const getAdminController = async (req: AuthenticatedRequest, res: Respons
       });
     }
 
+    // If the request is not from the owner or an admin, return limited profile data
+    const isOwner = (req as any).user?.id === admin._id.toString();
+    const isAdmin = (req as any).user?.role === 'admin';
+
+    if (!isOwner && !isAdmin) {
+      // Return only public profile data
+      const { _id, name, email, avatar } = admin;
+      return res.json({ 
+        success: true, 
+        data: { _id, name, email, avatar } 
+      });
+    }
+
+    // Return full profile data for owner or admin
     res.status(200).json({
       success: true,
       data: admin
@@ -195,10 +184,8 @@ export const updateAdminController = async (req: AuthenticatedRequest, res: Resp
       }
     }
 
-    // Don't allow role to be updated
-    if (updateData.role) {
-      delete admin.role;
-    }
+    // Role is protected by the schema's immutable: true setting
+    // No need to manually delete it here
 
     // Save changes
     const savedAdmin = await admin.save();

@@ -8,10 +8,11 @@ import { CandidateProfile } from "../../profile/candidate/models/CandidateProfil
 import { RecruiterProfile } from "../../profile/recruiter/models/RecruiterProfile";
 import { AdminProfile } from "../../profile/admin/models/AdminProfile";
 
-const ACCESS_TTL = "15m";
-const REFRESH_TTL = "7d";
+// Token expiration times
+const ACCESS_TTL = "24h";  // Increased from 15m to 24h
+const REFRESH_TTL = "30d"; // Increased from 7d to 30d
 const REFRESH_COOKIE_NAME = "refreshToken";
-const REFRESH_COOKIE_MAXAGE = 7 * 24 * 60 * 60 * 1000;
+const REFRESH_COOKIE_MAXAGE = 30 * 24 * 60 * 60 * 1000; // 30 days in milliseconds
 
 // export const register = async (req: Request, res: Response) => {
 //   const { name, email, password, role, phone, company, designation, agency, skills } = req.body;

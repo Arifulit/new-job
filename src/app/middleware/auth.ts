@@ -68,11 +68,17 @@ export const authMiddleware = (allowedRoles?: string[]): RequestHandler => {
         }
 
         // Set user in request object with proper role handling
-        const userRole = (decoded.role || 'user').toString().toLowerCase().trim();
+        // Default to 'candidate' role if not specified
+        let userRole = (decoded.role || 'candidate').toString().toLowerCase().trim();
+        
+        // Map legacy roles to new role structure if needed
+        if (userRole === 'user') userRole = 'candidate';
+        if (userRole === 'super_admin') userRole = 'admin';
+        
         req.user = {
           id: decoded.id,
           email: decoded.email || '',
-          role: userRole,
+          role: userRole as 'admin' | 'recruiter' | 'candidate',
           ...decoded
         };
 
@@ -99,7 +105,13 @@ export const authMiddleware = (allowedRoles?: string[]): RequestHandler => {
             console.log("✅ Admin access granted");
             next();
             return;
-          } 
+          }
+          // If user is a recruiter, allow access to admin routes
+          if (userRole === 'recruiter' && allowed.includes('admin')) {
+            console.log("✅ Recruiter has admin access");
+            next();
+            return;
+          }
           // Check if user has any of the allowed roles
           else if (userRole && allowed.includes(userRole)) {
             console.log(`✅ Access granted for role: ${userRole}`);
@@ -154,6 +166,18 @@ export const optionalAuth: RequestHandler = (req, res, next) => {
     console.log("ℹ️ Optional auth - Invalid token, continuing as guest");
   }
   
+  next();
+};
+
+// Middleware to ensure user is authenticated and has the required role
+export const requireAuth = (req: Request, res: Response, next: NextFunction) => {
+  if (!req.user) {
+    console.log("⚠️ requireAuth: User not authenticated");
+    return res.status(401).json({ 
+      success: false, 
+      message: "Authentication required" 
+    });
+  }
   next();
 };
 

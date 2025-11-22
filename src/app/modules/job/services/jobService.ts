@@ -1,14 +1,14 @@
 // src/app/modules/job/services/jobService.ts
 import { Job, IJob } from "../models/Job";
-import { FilterQuery, Types } from "mongoose";
+import { FilterQuery, Types, PopulateOptions } from "mongoose";
 
 interface GetJobsOptions {
   filters?: FilterQuery<IJob>;
   sort?: Record<string, 1 | -1 | 'asc' | 'desc'>;
   skip?: number;
   limit?: number;
-  select?: string;
-  populate?: string | Record<string, string> | (string | Record<string, string>)[];
+  select?: string | string[];
+  populate?: string | string[] | PopulateOptions | Array<string | PopulateOptions>;
   company?: Types.ObjectId | string;
 }
 
@@ -18,7 +18,13 @@ export interface IJobUpdateData extends Partial<Omit<IJob, 'createdBy' | 'create
 
 export const createJob = async (data: Omit<IJob, 'createdAt' | 'updatedAt'>) => {
   try {
-    return await Job.create(data);
+    // Set default status to pending for new jobs
+    const jobData = {
+      ...data,
+      status: 'pending',
+      isApproved: false
+    };
+    return await Job.create(jobData);
   } catch (error) {
     throw new Error(`Failed to create job: ${error instanceof Error ? error.message : String(error)}`);
   }
@@ -45,52 +51,73 @@ export const updateJob = async (id: string, data: IJobUpdateData) => {
   }
 };
 
-// export const getJobs = async (options: GetJobsOptions = {}) => {
-//   const {
-//     filters = {},
-//     sort = { createdAt: -1 },
-//     skip = 0,
-//     limit = 10,
-//     select = '',
-//     populate = [
-//       { path: 'createdBy', select: 'name email' },
-//       { path: 'company', select: 'name logo' }
-//     ],
-//     company
-//   } = options;
+export const approveJob = async (jobId: string, adminId: Types.ObjectId | string) => {
+  try {
+    const job = await Job.findByIdAndUpdate(
+      jobId,
+      { 
+        status: 'approved',
+        isApproved: true,
+        $unset: { rejectionReason: 1 }, // Remove rejection reason if any
+        approvedBy: adminId,
+        approvedAt: new Date()
+      },
+      { new: true }
+    );
 
-//   // Add company to filters if provided
-//   if (company) {
-//     filters.company = company;
-//   }
+    if (!job) {
+      throw new Error('Job not found');
+    }
 
-//   try {
-//     let query = Job.find(filters)
-//       .sort(sort)
-//       .skip(skip)
-//       .limit(limit)
-//       .select(select);
+    return job;
+  } catch (error) {
+    throw new Error(`Failed to approve job: ${error instanceof Error ? error.message : String(error)}`);
+  }
+};
 
-//     // Apply population with type assertions to avoid complex union types
-//     if (populate) {
-//       if (Array.isArray(populate)) {
-//         // Type assertion to any[] to avoid complex union types
-//         query = query.populate(populate as any[]);
-//       } else {
-//         // Type assertion for string or object populate
-//         query = query.populate(populate as string | Record<string, string>);
-//       }
-//     }
+export const rejectJob = async (jobId: string, adminId: Types.ObjectId | string, reason: string) => {
+  try {
+    if (!reason || typeof reason !== 'string' || reason.trim().length < 5) {
+      throw new Error('Rejection reason is required and must be at least 5 characters long');
+    }
 
-//     return await query.lean().exec();
-//   } catch (error) {
-//     console.error('Error in getJobs service:', error);
-//     throw new Error(`Failed to fetch jobs: ${error instanceof Error ? error.message : String(error)}`);
-//   }
-// };
+    const job = await Job.findByIdAndUpdate(
+      jobId,
+      { 
+        status: 'rejected',
+        isApproved: false,
+        rejectionReason: reason,
+        rejectedBy: adminId,
+        rejectedAt: new Date()
+      },
+      { new: true }
+    );
 
+    if (!job) {
+      throw new Error('Job not found');
+    }
 
-export const getJobs = async (options: GetJobsOptions = {}) => {
+    return job;
+  } catch (error) {
+    throw new Error(`Failed to reject job: ${error instanceof Error ? error.message : String(error)}`);
+  }
+};
+
+export const getPendingJobs = async (options: GetJobsOptions = {}): Promise<IJob[]> => {
+  return getJobs({
+    ...options,
+    filters: { ...options.filters, status: 'pending' }
+  });
+};
+
+export const getApprovedJobs = async (options: GetJobsOptions = {}): Promise<IJob[]> => {
+  return getJobs({
+    ...options,
+    filters: { ...options.filters, status: 'approved', isApproved: true }
+  });
+};
+
+export const getJobs = async (options: GetJobsOptions = {}): Promise<any[]> => {
   const {
     filters = {},
     sort = { createdAt: -1 },
@@ -112,45 +139,53 @@ export const getJobs = async (options: GetJobsOptions = {}) => {
   try {
     // Handle text search if search query is provided
     if (filters.$text) {
-      await Job.syncIndexes(); // Ensure text index exists
+      await Job.syncIndexes();
     }
 
-    let query = Job.find(filters)
-      .sort(sort)
-      .skip(skip)
-      .limit(limit)
-      .select(select);
+    // Build the query step by step with proper type assertions
+    // Only show approved jobs by default if not otherwise specified
+    if (!filters.status && !filters.isApproved) {
+      filters.isApproved = true;
+      filters.status = 'approved';
+    }
 
-    // Apply population with proper type handling
+    let query = Job.find(filters);
+
+    // Apply sorting, skipping, and limiting
+    query = query.sort(sort).skip(skip).limit(limit).select(select);
+
+    // Apply population
     if (populate) {
       if (Array.isArray(populate)) {
-        populate.forEach(populateOption => {
-          query = query.populate(populateOption);
-        });
-      } else {
+        // Handle array of populate options
+        query = query.populate(populate as (string | PopulateOptions)[]);
+      } else if (typeof populate === 'string') {
+        // Handle single string path
         query = query.populate(populate);
+      } else {
+        // Handle PopulateOptions object
+        query = query.populate(populate as PopulateOptions);
       }
     }
 
-    // If no text search, use regex for case-insensitive search on title and description
-    if (!filters.$text && (filters.title || filters.description)) {
-      const orConditions = [];
+    // Handle search conditions
+    const conditions: any[] = [];
+    
+    // Handle title and description search
+    if (!filters.$text) {
       if (filters.title) {
-        orConditions.push({ title: { $regex: filters.title, $options: 'i' } });
+        conditions.push({ title: { $regex: filters.title, $options: 'i' } });
         delete filters.title;
       }
       if (filters.description) {
-        orConditions.push({ description: { $regex: filters.description, $options: 'i' } });
+        conditions.push({ description: { $regex: filters.description, $options: 'i' } });
         delete filters.description;
-      }
-      if (orConditions.length > 0) {
-        query = query.or(orConditions);
       }
     }
 
-    // Handle location search with regex
+    // Handle location search
     if (filters.location) {
-      query = query.where('location', new RegExp(filters.location, 'i'));
+      conditions.push({ location: new RegExp(filters.location, 'i') });
       delete filters.location;
     }
 
@@ -172,13 +207,30 @@ export const getJobs = async (options: GetJobsOptions = {}) => {
       }
     });
 
+    // Apply OR conditions if any
+    if (conditions.length > 0) {
+      query = query.or(conditions);
+    }
+
     return await query.lean().exec();
   } catch (error) {
     console.error('Error in getJobs service:', error);
     throw new Error(`Failed to fetch jobs: ${error instanceof Error ? error.message : String(error)}`);
   }
 };
-export const closeJob = async (jobId: string, userId: Types.ObjectId | string) => {
+export const deleteJob = async (id: string) => {
+  try {
+    const job = await Job.findByIdAndDelete(id);
+    if (!job) {
+      throw new Error('Job not found');
+    }
+    return job;
+  } catch (error) {
+    throw new Error(`Failed to delete job: ${error instanceof Error ? error.message : String(error)}`);
+  }
+};
+
+export const closeJob = async (jobId: string, userId: Types.ObjectId | string, userRole?: string) => {
   try {
     const job = await Job.findById(jobId);
     
@@ -192,7 +244,7 @@ export const closeJob = async (jobId: string, userId: Types.ObjectId | string) =
     
     // Check if the user is the owner or admin
     const isOwner = createdByIdStr === userIdStr;
-    const isAdmin = req.user?.role === 'admin'; // Assuming role is available in req.user
+    const isAdmin = userRole === 'admin';
     
     if (!isOwner && !isAdmin) {
       throw new Error('Not authorized to close this job');
@@ -212,11 +264,16 @@ export const closeJob = async (jobId: string, userId: Types.ObjectId | string) =
   }
 };
 
-export const getJobById = async (id: string) => {
+interface PopulatedJob extends Omit<IJob, 'createdBy' | 'company'> {
+  createdBy: { _id: Types.ObjectId; name: string; email: string };
+  company: { _id: Types.ObjectId; name: string; logo?: string };
+}
+
+export const getJobById = async (id: string): Promise<PopulatedJob> => {
   try {
     const job = await Job.findById(id)
-      .populate('createdBy', 'name email')
-      .populate('company', 'name logo')
+      .populate<{ createdBy: { name: string; email: string } }>('createdBy', 'name email')
+      .populate<{ name: string; logo?: string }>('company', 'name logo')
       .lean()
       .exec();
     
@@ -224,8 +281,9 @@ export const getJobById = async (id: string) => {
       throw new Error('Job not found');
     }
     
-    return job;
+    return job as unknown as PopulatedJob;
   } catch (error) {
-    throw new Error(`Failed to get job: ${error instanceof Error ? error.message : String(error)}`);
+    const errorMessage = error instanceof Error ? error.message : 'Failed to get job';
+    throw new Error(errorMessage);
   }
 };
